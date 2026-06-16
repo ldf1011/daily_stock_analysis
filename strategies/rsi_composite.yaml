@@ -1,0 +1,53 @@
+# RSI Composite Strategy / RSI综合优选
+
+name: rsi_composite
+display_name: RSI综合优选
+description: 结合 RSI 超卖修复、价格反弹、均线过滤与量能要求，偏向低位修复后的右侧确认。
+category: reversal
+core_rules: [1, 4, 5]
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+aliases: [RSI综合优选, RSI反转, RSI修复]
+default_priority: 65
+market_regimes: [sideways, trending_down]
+
+instructions: |
+  **RSI综合优选（RSI Composite）**
+
+  适用场景：
+  - 用于捕捉超卖后修复、但已经出现右侧确认的反弹机会。
+  - 不做单纯抄底，必须等待 RSI 和价格共同修复。
+
+  分析框架：
+
+  1. **RSI 条件**
+     - 默认使用 RSI14。
+     - 最近 10 根 K 线内，RSI 曾低于 30，随后重新上穿 36，可视为首要买点。
+     - 若 RSI 先深度超卖到 25 以下，再快速回升，同样可视为积极修复。
+
+  2. **价格确认**
+     - 收盘价必须上涨，且不低于近 5 日低点的 102%。
+     - 不是只看指标回升，还要确认价格已经出现真实反弹。
+
+  3. **趋势与量能过滤**
+     - 收盘价不能明显弱于 120 日均线，最多允许低于 40%。
+     - 成交量不能太弱，至少达到 20 日均量的 45%。
+     - 若量价都无修复迹象，则即使 RSI 回升也不应激进看多。
+
+  4. **卖出与风险控制**
+     - 硬止损：亏损达到 13%。
+     - ATR 止损：跌破买入价减去 4 倍 ATR。
+     - 若盈利超过 12%，回撤超过 20% 应提示移动止盈。
+     - RSI 上穿 75、盈利后跌破 60 日均线，或持仓很久仍走弱，都应降低持有评级。
+
+  5. **交易建议输出**
+     - 必须区分“超卖修复中的机会”与“弱势股技术性反弹”。
+     - 输出中说明反弹质量、量能是否达标、是否已脱离危险区。
+
+  评分调整建议：
+  - RSI 超卖后重新站上确认位：`sentiment_score +10`
+  - 价格与量能同步修复：额外 `+6`
+  - 仅 RSI 反弹、价格量能不配合：`sentiment_score -6`
+  - 再次转弱或高位过热：`sentiment_score -12`

@@ -1,0 +1,49 @@
+# Wyckoff Enhanced Strategy / 威科夫增强
+
+name: wyckoff_enhanced
+display_name: 威科夫增强
+description: 围绕吸筹区、Spring、SOS 与 LPS 的结构化识别，适合跟踪主力吸筹后的趋势启动。
+category: framework
+core_rules: [2, 3, 4, 5]
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+aliases: [威科夫增强, 威科夫, Wyckoff]
+default_priority: 75
+market_regimes: [sideways, trending_up]
+
+instructions: |
+  **威科夫增强（Wyckoff Enhanced）**
+
+  适用场景：
+  - 用于识别震荡吸筹结束后的趋势启动。
+  - 比单纯突破更重视结构与主力行为线索。
+
+  分析框架：
+
+  1. **区间识别**
+     - 以前 100 根 K 线高低点构成主要交易区间。
+     - 区间宽度不能过大，通常不应超过 35%，否则结构失真、可操作性下降。
+
+  2. **买入信号**
+     - **Spring**：跌破区间下沿后迅速收回，出现明显下影，收盘位于 K 线中上部。
+     - **SOS**：放量突破区间上沿，成交量高于 20 日均量的 1.05 倍。
+     - **LPS**：SOS 后缩量回踩区间上沿附近企稳，成交量低于 20 日均量的 0.85 倍。
+     - 三类信号里，LPS 通常是更稳健的二次确认点。
+
+  3. **卖出与失效条件**
+     - **Upthrust**：假突破，上影后收回区间。
+     - 突破失败：收盘重新跌回区间上沿。
+     - 跌破区间下沿，或跌破 60 日趋势均线，都应视为结构转弱。
+
+  4. **交易建议输出**
+     - 需要明确当前更像 Spring、SOS 还是 LPS。
+     - 说明是否已经脱离吸筹区，还是仍在区间内部震荡。
+     - 若只是普通箱体波动、未见主力吸筹确认，应给出观望判断。
+
+  评分调整建议：
+  - Spring 成功收回：`sentiment_score +8`
+  - SOS 放量有效突破：`sentiment_score +10`
+  - LPS 缩量回踩企稳：`sentiment_score +12`
+  - 假突破或失守关键结构：`sentiment_score -12`

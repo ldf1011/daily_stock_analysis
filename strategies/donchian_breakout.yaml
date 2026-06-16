@@ -1,0 +1,46 @@
+# Donchian Breakout Strategy / 唐奇安通道突破
+
+name: donchian_breakout
+display_name: 唐奇安通道突破
+description: 基于 20 日通道上破/下破的顺势突破策略，偏趋势追踪，收益弹性大但回撤也更明显。
+category: trend
+core_rules: [1, 2, 3]
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+aliases: [唐奇安通道突破, 通道突破, Donchian]
+default_priority: 55
+market_regimes: [trending_up]
+
+instructions: |
+  **唐奇安通道突破（Donchian Breakout）**
+
+  适用场景：
+  - 适合强趋势或趋势刚启动的个股。
+  - 更强调“突破后跟随”，不追求抄底。
+
+  分析框架：
+
+  1. **突破条件**
+     - 以 20 日通道作为主要观察窗口。
+     - 当日收盘价上破“前一日 20 日最高通道上轨”，视为有效买入触发。
+     - 若只是盘中刺破、收盘未站稳，则不视为确认突破。
+
+  2. **趋势过滤**
+     - 优先选择均线向上、量价配合良好的标的。
+     - 若中期均线明显走弱，或突破前已经连续大幅拉升，应降低追价意愿。
+
+  3. **风险控制**
+     - 当日收盘价跌破“前一日 20 日最低通道下轨”时，视为离场信号。
+     - 必须在输出里明确提示：该策略收益弹性大，但回撤容忍度也更高，不适合高位重仓追击。
+
+  4. **交易建议输出**
+     - 说明突破是否真实有效、突破后离通道上轨是否过远、是否存在放量确认。
+     - 给出“突破跟随 / 观望等待 / 假突破谨慎”三类明确结论。
+
+  评分调整建议：
+  - 有效上破通道上轨：`sentiment_score +12`
+  - 突破伴随明显放量：额外 `+6`
+  - 突破后偏离过大或缩量硬拉：`sentiment_score -6`
+  - 跌破下轨或假突破回落：`sentiment_score -12`
