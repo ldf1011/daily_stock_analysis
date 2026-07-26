@@ -1,0 +1,19 @@
+import { useEffect, useState } from 'react';
+import { Play, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AppPage, Button, InlineAlert } from '../components/common';
+import { paperTradingApi, type PaperTradingState } from '../api/paperTrading';
+const money=(n:number)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency:'CNY',maximumFractionDigits:2}).format(n||0);
+export default function PaperTradingPage(){
+ const [state,setState]=useState<PaperTradingState|null>(null); const [busy,setBusy]=useState(false); const [error,setError]=useState('');
+ const load=async()=>{try{setError('');setState(await paperTradingApi.status())}catch{setError('模拟盘状态读取失败')}};
+ useEffect(()=>{void load();const id=window.setInterval(()=>void load(),15000);return()=>window.clearInterval(id)},[]);
+ const update=async(action:()=>Promise<PaperTradingState>)=>{setBusy(true);try{setState(await action())}catch{setError('模拟交易请求失败，请稍后重试。')}finally{setBusy(false)}};
+ if(!state)return <AppPage className="max-w-6xl pt-6">{error ? <InlineAlert variant="warning" title="模拟盘提示" message={error} /> : '正在读取模拟盘...'}{error ? <div className="mt-4"><Button variant="secondary" onClick={()=>void load()}>重新加载</Button></div> : null}</AppPage>;
+ return <AppPage className="max-w-6xl space-y-5 pb-12 pt-6">
+  <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold">A 股模拟自动交易</h1><p className="mt-2 text-sm text-secondary-text">仅模拟成交，不连接券商、不产生真实资金交易。AI 仅在趋势回踩确认后提交指令。</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>void load()}><RefreshCw className="h-4 w-4"/>刷新</Button><Button isLoading={busy} onClick={()=>void update(()=>paperTradingApi.run())}><Play className="h-4 w-4"/>运行一轮</Button></div></div>
+  {error?<InlineAlert variant="warning" title="模拟盘提示" message={error}/>:null}
+  <section className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-secondary-text">账户权益</p><p className="mt-2 text-xl font-semibold">{money(state.equity)}</p></div><div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-secondary-text">可用现金</p><p className="mt-2 text-xl font-semibold">{money(state.cash)}</p></div><div className="rounded-lg border border-border bg-card p-4"><p className="text-xs text-secondary-text">运行状态</p><p className="mt-2 text-xl font-semibold">{state.enabled?'自动模拟中':'已暂停'}</p></div></section>
+  <section className="rounded-lg border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">自动执行</h2><p className="mt-1 text-xs text-secondary-text">最大单票 {state.risk.max_position_pct}% · 总仓 {state.risk.max_exposure_pct}% · 最多 {state.risk.max_positions} 只 · 最大回撤 {state.risk.max_drawdown_pct}%</p></div><Button variant={state.enabled?'secondary':'primary'} isLoading={busy} onClick={()=>void update(()=>paperTradingApi.enabled(!state.enabled))}>{state.enabled?'暂停模拟':'启动模拟'}</Button></div></section>
+  <section className="rounded-lg border border-border bg-card p-4"><h2 className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4 text-cyan"/>当前持仓</h2><div className="mt-3 overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-secondary-text"><tr><th>股票</th><th>数量</th><th>成本</th><th>现价</th><th>止损</th><th>目标</th></tr></thead><tbody>{state.positions.length?state.positions.map(p=><tr key={p.code} className="border-t border-border"><td className="py-3">{p.name} {p.code}</td><td>{p.shares}</td><td>{p.entry_price.toFixed(2)}</td><td>{p.last_price.toFixed(2)}</td><td>{p.stop_loss.toFixed(2)}</td><td>{p.target_price.toFixed(2)}</td></tr>):<tr><td className="py-6 text-secondary-text" colSpan={6}>暂无持仓。启动后会在下一轮符合条件时模拟建仓。</td></tr>}</tbody></table></div></section>
+ </AppPage>;
+}

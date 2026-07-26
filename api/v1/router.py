@@ -15,6 +15,7 @@ from api.v1.endpoints import (
     agent,
     alerts,
     alphasift,
+    paper_trading,
     analysis,
     auth,
     backtest,
@@ -101,6 +102,7 @@ router.include_router(
     prefix="/alphasift",
     tags=["AlphaSift"]
 )
+router.include_router(paper_trading.router, prefix="/paper-sim", tags=["PaperTrading"])
 
 router.include_router(
     health.router,
