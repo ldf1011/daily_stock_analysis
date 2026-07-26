@@ -1,9 +1,11 @@
 """A-share paper-trading loop. It never sends orders to a broker."""
 from __future__ import annotations
 import json, threading
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
+import exchange_calendars as xcals
 from src.config import get_config
 from src.services.alphasift_service import AlphaSiftService, get_dsa_realtime_quote
 from src.market_analyzer import MarketAnalyzer
@@ -12,14 +14,24 @@ class PaperTradingService:
     _lock = threading.RLock(); _path = Path("data") / "paper_trading.json"
     _market_cache: dict[str, Any] | None = None
     _market_refreshing = False
+    _calendar = None
     def status(self):
         with self._lock:
-            state = self._load(); self._mark(state); self._save(state); return self._view(state)
+            state = self._load()
+            if self._is_trading_window(): self._mark(state)
+            self._maybe_generate_daily_report(state)
+            self._save(state); return self._view(state)
     def set_enabled(self, enabled: bool):
         with self._lock:
             state=self._load(); state["enabled"]=bool(enabled); state["updated_at"]=self._now(); self._save(state); return self._view(state)
     def run_cycle(self):
         with self._lock:
+            state=self._load()
+            if not self._is_trading_window():
+                self._maybe_generate_daily_report(state)
+                state["last_cycle"]={"at":self._now(),"actions":[{"action":"skipped","reason":"outside_trading_window"}]}
+                self._save(state)
+                return self._view(state)
             state=self._load(); self._mark(state); actions=self._sell_risk(state)
             if not state["enabled"]: actions.append({"action":"paused"})
             elif self._equity(state) < state["peak_equity"]*.92: state["enabled"]=False; actions.append({"action":"paused","reason":"max_drawdown"})
@@ -84,6 +96,27 @@ class PaperTradingService:
             if not reason: keep.append(p); continue
             state["cash"]=round(state["cash"]+p["shares"]*price,2); state["orders"].append({"at":self._now(),"side":"sell","code":p["code"],"shares":p["shares"],"price":price,"reason":reason,"simulated":True}); actions.append({"action":"simulated_sell","code":p["code"],"reason":reason})
         state["positions"]=keep; return actions
+
+    def _is_trading_window(self):
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        try:
+            if self._calendar is None: self._calendar = xcals.get_calendar("XSHG")
+            if not self._calendar.is_session(now.date().isoformat()): return False
+        except Exception:
+            return False
+        return time(9, 0) <= now.time() < time(15, 30)
+
+    def _maybe_generate_daily_report(self, state):
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        if now.time() < time(15, 30) or now.weekday() >= 5: return
+        date_key = now.date().isoformat()
+        reports = state.setdefault("daily_reports", [])
+        if any(report.get("date") == date_key for report in reports): return
+        orders = [order for order in state.get("orders", []) if str(order.get("at", ""))[:10] == date_key]
+        buys = [order for order in orders if order.get("side") == "buy"]
+        sells = [order for order in orders if order.get("side") == "sell"]
+        reports.append({"date":date_key,"generated_at":self._now(),"buys":len(buys),"sells":len(sells),"trade_count":len(orders),"equity":round(self._equity(state),2),"cash":round(state["cash"],2),"position_count":len(state["positions"]),"market_context":state.get("market_context"),"summary":f"模拟交易日报：买入 {len(buys)} 笔，卖出 {len(sells)} 笔，当前权益 {self._equity(state):.2f}。"})
+        state["daily_reports"] = reports[-30:]
     def _mark(self,state):
         for p in state["positions"]:
             q=get_dsa_realtime_quote(p["code"]); price=self._number(q.get("price") or q.get("last_price") or q.get("close")); p["last_price"]=price or p["last_price"]
