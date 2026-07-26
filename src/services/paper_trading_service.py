@@ -11,6 +11,7 @@ from src.market_analyzer import MarketAnalyzer
 class PaperTradingService:
     _lock = threading.RLock(); _path = Path("data") / "paper_trading.json"
     _market_cache: dict[str, Any] | None = None
+    _market_refreshing = False
     def status(self):
         with self._lock:
             state = self._load(); self._mark(state); self._save(state); return self._view(state)
@@ -49,7 +50,13 @@ class PaperTradingService:
 
     def _market_context(self):
         cached = self._market_cache
-        if cached and datetime.fromisoformat(cached["at"]) > datetime.now(timezone.utc) - timedelta(minutes=5): return cached
+        if cached and datetime.fromisoformat(cached["at"]) > datetime.now(timezone.utc) - timedelta(minutes=15): return cached
+        if not self._market_refreshing:
+            self._market_refreshing = True
+            threading.Thread(target=self._refresh_market_context, daemon=True).start()
+        return cached or {"at":self._now(),"regime":"defensive","score":0,"breadth_pct":0,"leading_sectors":[],"max_exposure_pct":0,"max_positions":0,"reason":"market_context_refreshing"}
+
+    def _refresh_market_context(self):
         try:
             overview = MarketAnalyzer(region="cn", config=get_config()).get_market_overview()
             index_changes = [float(getattr(row, "change_pct", 0) or 0) for row in overview.indices[:3]]
@@ -64,7 +71,7 @@ class PaperTradingService:
         except Exception as exc:
             result = {"at":self._now(),"regime":"defensive","score":0,"breadth_pct":0,"leading_sectors":[],"max_exposure_pct":0,"max_positions":0,"reason":f"market_data_unavailable:{type(exc).__name__}"}
         self._market_cache = result
-        return result
+        self._market_refreshing = False
 
     @staticmethod
     def _is_leading_sector(sector, leaders):
