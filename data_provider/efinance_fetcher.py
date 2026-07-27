@@ -24,6 +24,7 @@ import logging
 import os
 import random
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
@@ -280,6 +281,9 @@ class EfinanceFetcher(BaseFetcher):
     
     name = "EfinanceFetcher"
     priority = int(os.getenv("EFINANCE_PRIORITY", "0"))  # 最高优先级，排在 AkshareFetcher 之前
+    _eastmoney_cooldown_until = 0.0
+    _eastmoney_cooldown_lock = threading.Lock()
+    _EASTMONEY_COOLDOWN_SECONDS = 300
     
     def __init__(self, sleep_min: float = 1.5, sleep_max: float = 3.0):
         """
@@ -454,6 +458,11 @@ class EfinanceFetcher(BaseFetcher):
         - klt: 周期，101=日线
         - fqt: 复权方式，1=前复权
         """
+        with type(self)._eastmoney_cooldown_lock:
+            in_cooldown = time.monotonic() < type(self)._eastmoney_cooldown_until
+        if in_cooldown:
+            return self._fetch_tencent_history_fallback(stock_code, start_date, end_date)
+
         import efinance as ef
         
         # 防封禁策略 1: 随机 User-Agent
@@ -522,6 +531,11 @@ class EfinanceFetcher(BaseFetcher):
                 logger.error(failure_message)
 
             if category in {"remote_disconnect", "timeout", "rate_limit_or_anti_bot"}:
+                with type(self)._eastmoney_cooldown_lock:
+                    type(self)._eastmoney_cooldown_until = max(
+                        type(self)._eastmoney_cooldown_until,
+                        time.monotonic() + self._EASTMONEY_COOLDOWN_SECONDS,
+                    )
                 try:
                     return self._fetch_tencent_history_fallback(stock_code, start_date, end_date)
                 except Exception as fallback_exc:
