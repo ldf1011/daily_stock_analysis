@@ -16,11 +16,17 @@ class PaperTradingService:
     _market_refreshing = False
     _calendar = None
     def status(self):
-        with self._lock:
+        if not self._lock.acquire(blocking=False):
+            # A screening cycle may take tens of seconds. Serve the most recent
+            # persisted snapshot instead of making the web UI wait on it.
+            return self._view(self._load())
+        try:
             state = self._load()
             if self._is_trading_window(): self._mark(state)
             self._maybe_generate_daily_report(state)
             self._save(state); return self._view(state)
+        finally:
+            self._lock.release()
     def set_enabled(self, enabled: bool):
         with self._lock:
             state=self._load(); state["enabled"]=bool(enabled); state["updated_at"]=self._now(); self._save(state); return self._view(state)
