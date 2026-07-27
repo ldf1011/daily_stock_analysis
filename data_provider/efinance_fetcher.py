@@ -530,7 +530,7 @@ class EfinanceFetcher(BaseFetcher):
             else:
                 logger.error(failure_message)
 
-            if category in {"remote_disconnect", "timeout", "rate_limit_or_anti_bot"}:
+            if category in {"remote_disconnect", "timeout", "rate_limit_or_anti_bot"} or isinstance(e, PermissionError):
                 with type(self)._eastmoney_cooldown_lock:
                     type(self)._eastmoney_cooldown_until = max(
                         type(self)._eastmoney_cooldown_until,
