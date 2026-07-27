@@ -41,6 +41,8 @@ class PaperTradingService:
                 actions += self._buy_confirmed(state, context)
             state["peak_equity"]=max(state["peak_equity"],self._equity(state)); state["last_cycle"]={"at":self._now(),"actions":actions}; self._save(state); return self._view(state)
     def _buy_confirmed(self,state, context):
+        if context.get("reason") == "market_context_refreshing":
+            return [{"action":"skipped","reason":"market_context_refreshing"}]
         if context["regime"] == "defensive": return [{"action":"skipped","reason":"market_defensive"}]
         max_positions = min(5, context["max_positions"])
         if len(state["positions"])>=max_positions:return [{"action":"skipped","reason":"max_positions"}]
@@ -66,7 +68,7 @@ class PaperTradingService:
         if not self._market_refreshing:
             self._market_refreshing = True
             threading.Thread(target=self._refresh_market_context, daemon=True).start()
-        return cached or {"at":self._now(),"regime":"defensive","score":0,"breadth_pct":0,"leading_sectors":[],"max_exposure_pct":0,"max_positions":0,"reason":"market_context_refreshing"}
+        return cached or {"at":self._now(),"regime":"refreshing","score":0,"breadth_pct":0,"leading_sectors":[],"max_exposure_pct":0,"max_positions":0,"reason":"market_context_refreshing"}
 
     def _refresh_market_context(self):
         try:
@@ -84,6 +86,11 @@ class PaperTradingService:
             result = {"at":self._now(),"regime":"defensive","score":0,"breadth_pct":0,"leading_sectors":[],"max_exposure_pct":0,"max_positions":0,"reason":f"market_data_unavailable:{type(exc).__name__}"}
         self._market_cache = result
         self._market_refreshing = False
+        # Surface a completed refresh immediately rather than waiting for the next cycle.
+        with self._lock:
+            state = self._load()
+            state["market_context"] = result
+            self._save(state)
 
     @staticmethod
     def _is_leading_sector(sector, leaders):
