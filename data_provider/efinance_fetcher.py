@@ -118,6 +118,7 @@ class EfinanceRealtimeQuote:
 logger = logging.getLogger(__name__)
 
 EASTMONEY_HISTORY_ENDPOINT = "push2his.eastmoney.com/api/qt/stock/kline/get"
+TENCENT_HISTORY_ENDPOINT = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 
 
 # User-Agent 池，用于随机轮换
@@ -314,6 +315,55 @@ class EfinanceFetcher(BaseFetcher):
         )
         return category, message
 
+    @staticmethod
+    def _tencent_symbol(stock_code: str) -> str:
+        code = normalize_stock_code(stock_code)
+        return ("sh" if code.startswith(("5", "6", "9")) else "sz") + code
+
+    def _fetch_tencent_history_fallback(
+        self, stock_code: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch daily OHLCV from Tencent when Eastmoney rejects the server IP."""
+        symbol = self._tencent_symbol(stock_code)
+        params = {
+            "param": f"{symbol},day,{start_date},{end_date},640,qfq",
+        }
+        response = requests.get(
+            TENCENT_HISTORY_ENDPOINT,
+            params=params,
+            headers={"User-Agent": random.choice(USER_AGENTS)},
+            timeout=12,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        series = (payload.get("data") or {}).get(symbol) or {}
+        rows = series.get("qfqday") or series.get("day") or []
+        if not rows:
+            raise DataFetchError(f"Tencent history returned no bars for {stock_code}")
+
+        frame = pd.DataFrame(
+            [
+                {
+                    "日期": row[0],
+                    "开盘": row[1],
+                    "收盘": row[2],
+                    "最高": row[3],
+                    "最低": row[4],
+                    "成交量": row[5],
+                }
+                for row in rows
+                if len(row) >= 6
+            ]
+        )
+        if frame.empty:
+            raise DataFetchError(f"Tencent history contained no usable bars for {stock_code}")
+        logger.warning(
+            "[数据源降级] Eastmoney history unavailable; using Tencent history: stock_code=%s rows=%d",
+            stock_code,
+            len(frame),
+        )
+        return frame
+
     def _set_random_user_agent(self) -> None:
         """
         设置随机 User-Agent
@@ -468,9 +518,19 @@ class EfinanceFetcher(BaseFetcher):
 
             if category == "rate_limit_or_anti_bot":
                 logger.warning(failure_message)
-                raise RateLimitError(f"efinance 可能被限流: {failure_message}") from e
+            else:
+                logger.error(failure_message)
 
-            logger.error(failure_message)
+            if category in {"remote_disconnect", "timeout", "rate_limit_or_anti_bot"}:
+                try:
+                    return self._fetch_tencent_history_fallback(stock_code, start_date, end_date)
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "Tencent history fallback failed for %s: %s", stock_code, fallback_exc
+                    )
+
+            if category == "rate_limit_or_anti_bot":
+                raise RateLimitError(f"efinance 可能被限流: {failure_message}") from e
             raise DataFetchError(f"efinance 获取数据失败: {failure_message}") from e
     
     def _fetch_etf_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
